@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Three.js WebXR AR</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164/build/three.module.js';
+import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.164/examples/jsm/webxr/ARButton.js';
+
+let scene, camera, renderer;
+let cube;
+
+init();
+animate();
+
+function init() {
+    // Cena
+    scene = new THREE.Scene();
+
+    // Câmera
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+
+    // Renderizador com suporte a WebXR
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // Botão de AR
+    document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ["hit-test"] }));
+
+    // Cubo de teste
+    const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    const material = new THREE.MeshNormalMaterial();
+    cube = new THREE.Mesh(geometry, material);
+    cube.visible = false;
+    scene.add(cube);
+
+    // Hit test (para colocar o objeto no chão)
+    renderer.xr.addEventListener("sessionstart", () => {
+        const session = renderer.xr.getSession();
+
+        session.requestReferenceSpace("viewer").then((refSpace) => {
+            session.requestHitTestSource({ space: refSpace }).then((source) => {
+                renderer.xr.hitTestSource = source;
+            });
+        });
+
+        renderer.xr.refSpace = renderer.xr.getReferenceSpace();
+    });
+
+    window.addEventListener('resize', onWindowResize);
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// Loop
+function animate() {
+    renderer.setAnimationLoop(render);
+}
+
+function render(timestamp, frame) {
+    if (frame) {
+        const hitTestSource = renderer.xr.hitTestSource;
+        if (hitTestSource) {
+            const hit = frame.getHitTestResults(hitTestSource)[0];
+            if (hit) {
+                const refSpace = renderer.xr.refSpace;
+                const pose = hit.getPose(refSpace);
+
+                cube.visible = true;
+                cube.position.set(pose.transform.position.x,
+                                  pose.transform.position.y,
+                                  pose.transform.position.z);
+
+                cube.rotation.y += 0.01;
+            }
+        }
+    }
+
+    renderer.render(scene, camera);
+}
+</script>
+
+</body>
+</html>
