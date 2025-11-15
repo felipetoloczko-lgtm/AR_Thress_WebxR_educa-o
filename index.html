@@ -1,67 +1,34 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>AR Engineering Viewer</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-    body { margin: 0; overflow: hidden; font-family: sans-serif; }
-    #ui {
-        position: absolute;
-        top: 10px; left: 10px;
-        padding: 10px;
-        background: rgba(255,255,255,0.85);
-        border-radius: 10px;
-        z-index: 10;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-    button, select {
-        padding: 8px 10px;
-        font-size: 14px;
-        border-radius: 6px;
-        border: 1px solid #ccc;
-    }
-</style>
+  <meta charset="utf-8">
+  <title>Three.js WebXR AR</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
 </head>
-
 <body>
-<div id="ui">
-    <select id="modelSelector"></select>
-
-    <button onclick="setView('front')">Vista Frontal</button>
-    <button onclick="setView('top')">Vista Superior</button>
-    <button onclick="setView('side')">Vista Lateral</button>
-    <button onclick="setView('iso')">Vista Isométrica</button>
-</div>
 
 <script type="module">
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.164/build/three.module.js";
-import { ARButton } from "https://cdn.jsdelivr.net/npm/three@0.164/examples/jsm/webxr/ARButton.js";
-import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.164/examples/jsm/loaders/GLTFLoader.js";
-import { OBJLoader } from "https://cdn.jsdelivr.net/npm/three@0.164/examples/jsm/loaders/OBJLoader.js";
-import { STLLoader } from "https://cdn.jsdelivr.net/npm/three@0.164/examples/jsm/loaders/STLLoader.js";
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164/build/three.module.js';
+import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.164/examples/jsm/webxr/ARButton.js';
 
 let scene, camera, renderer;
-let currentModel = null;
+let cube;
 
-// Lista de peças para seleção
-const modelList = [
-    { name: "Célula Auxética", file: "auxetic.glb" },
-    { name: "Treliça 2D", file: "truss.obj" },
-    { name: "Célula Extrudada", file: "lattice.stl" }
-];
-
-// ---- Início ----
 init();
 animate();
 
 function init() {
+    // Cena
     scene = new THREE.Scene();
 
-    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 50);
+    // Câmera
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
+    // Renderizador com suporte a WebXR
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
@@ -70,109 +37,60 @@ function init() {
     // Botão de AR
     document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ["hit-test"] }));
 
-    // Luz padrão
-    const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
-    scene.add(light);
+    // Cubo de teste
+    const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    const material = new THREE.MeshNormalMaterial();
+    cube = new THREE.Mesh(geometry, material);
+    cube.visible = false;
+    scene.add(cube);
 
-    // Popular o menu
-    const selector = document.getElementById("modelSelector");
-    modelList.forEach((m, i) => {
-        const opt = document.createElement("option");
-        opt.value = i;
-        opt.textContent = m.name;
-        selector.appendChild(opt);
+    // Hit test (para colocar o objeto no chão)
+    renderer.xr.addEventListener("sessionstart", () => {
+        const session = renderer.xr.getSession();
+
+        session.requestReferenceSpace("viewer").then((refSpace) => {
+            session.requestHitTestSource({ space: refSpace }).then((source) => {
+                renderer.xr.hitTestSource = source;
+            });
+        });
+
+        renderer.xr.refSpace = renderer.xr.getReferenceSpace();
     });
 
-    selector.addEventListener("change", () => {
-        loadModel(modelList[selector.value].file);
-    });
-
-    // Carrega o primeiro modelo
-    loadModel(modelList[0].file);
-
-    window.addEventListener("resize", onResize);
+    window.addEventListener('resize', onWindowResize);
 }
 
-function onResize() {
+function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// ---- Carregamento de modelos ----
-function loadModel(file) {
-    if (currentModel) {
-        scene.remove(currentModel);
-        currentModel = null;
-    }
-
-    const ext = file.split(".").pop().toLowerCase();
-
-    if (ext === "glb" || ext === "gltf") {
-        const loader = new GLTFLoader();
-        loader.load(file, (gltf) => {
-            currentModel = gltf.scene;
-            finalizeModel();
-        });
-
-    } else if (ext === "obj") {
-        const loader = new OBJLoader();
-        loader.load(file, (obj) => {
-            currentModel = obj;
-            finalizeModel();
-        });
-
-    } else if (ext === "stl") {
-        const loader = new STLLoader();
-        loader.load(file, (geo) => {
-            const mat = new THREE.MeshStandardMaterial({ color: 0xcccccc });
-            const mesh = new THREE.Mesh(geo, mat);
-            currentModel = mesh;
-            finalizeModel();
-        });
-    }
-}
-
-function finalizeModel() {
-    currentModel.scale.set(0.3, 0.3, 0.3);
-    currentModel.position.set(0, 0, -0.5);
-    scene.add(currentModel);
-}
-
-// ---- Vistas padrão (estilo desenho técnico) ----
-window.setView = function(view) {
-    if (!currentModel) return;
-
-    let box = new THREE.Box3().setFromObject(currentModel);
-    let size = new THREE.Vector3();
-    box.getSize(size);
-
-    const dist = size.length() * 1.2;
-
-    if (view === "front") {
-        camera.position.set(0, 0, dist);
-    }
-
-    if (view === "top") {
-        camera.position.set(0, dist, 0);
-    }
-
-    if (view === "side") {
-        camera.position.set(dist, 0, 0);
-    }
-
-    if (view === "iso") {
-        camera.position.set(dist, dist, dist);
-    }
-
-    camera.lookAt(currentModel.position);
-};
-
-// ---- Loop ----
+// Loop
 function animate() {
-    renderer.setAnimationLoop(() => {
-        renderer.render(scene, camera);
-    });
+    renderer.setAnimationLoop(render);
+}
+
+function render(timestamp, frame) {
+    if (frame) {
+        const hitTestSource = renderer.xr.hitTestSource;
+        if (hitTestSource) {
+            const hit = frame.getHitTestResults(hitTestSource)[0];
+            if (hit) {
+                const refSpace = renderer.xr.refSpace;
+                const pose = hit.getPose(refSpace);
+
+                cube.visible = true;
+                cube.position.set(pose.transform.position.x,
+                                  pose.transform.position.y,
+                                  pose.transform.position.z);
+
+                cube.rotation.y += 0.01;
+            }
+        }
+    }
+
+    renderer.render(scene, camera);
 }
 </script>
 
